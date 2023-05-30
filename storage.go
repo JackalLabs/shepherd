@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 
 	storageTypes "github.com/jackalLabs/canine-chain/x/storage/types"
@@ -54,6 +55,10 @@ func downloadFile(qc storageTypes.QueryClient, fid string, writer io.Writer) err
 	}
 
 	fmt.Println("attempting to download file...")
+
+	rand.Shuffle(len(arr), func(i, j int) { // randomize provider order
+		arr[i], arr[j] = arr[j], arr[i]
+	})
 
 	failed := true
 	for _, s := range arr {
