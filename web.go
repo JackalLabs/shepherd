@@ -19,12 +19,19 @@ func initRouter(ctx client.Context) http.Handler {
 
 		fid := ps.ByName("fid")
 
+		if len(fid) < 1 {
+			fmt.Println("needs to supply fid")
+			w.WriteHeader(500)
+			return
+		}
+
 		qc := storageTypes.NewQueryClient(ctx)
 
 		err := downloadFile(qc, fid, w)
-
 		if err != nil {
+			fmt.Println(err)
 			w.WriteHeader(500)
+			return
 		}
 	})
 
@@ -33,13 +40,13 @@ func initRouter(ctx client.Context) http.Handler {
 	return handler
 }
 
-func startServer(ctx client.Context) {
+func startServer(ctx client.Context, rpc string) {
 
 	handler := initRouter(ctx)
 
 	port := 5656
 
-	fmt.Printf("🌍 Started Shepherd: http://0.0.0.0:%d\n", port)
+	fmt.Printf("🌍 Started Shepherd: http://0.0.0.0:%d using %s\n", port, rpc)
 	err := http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d", port), handler)
 	if err != nil {
 		fmt.Println(err)

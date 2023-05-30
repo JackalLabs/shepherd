@@ -15,12 +15,7 @@ import (
 )
 
 func main() {
-	args := os.Args
-	if len(args) < 2 {
-		fmt.Printf("Usage: %s [RPC-ENDPOINT]\n", args[0])
-		return
-	}
-	rpc := args[1]
+	rpc := os.Getenv("RPC")
 
 	encodingConfig := params.MakeTestEncodingConfig()
 	std.RegisterLegacyAminoCodec(encodingConfig.Amino)
@@ -50,7 +45,5 @@ func main() {
 		WithNodeURI(rpc).
 		WithClient(cl)
 
-	//downloadFile(qc, "jklf1p5cm3z47rrcyaskqge3yc33xm7hdq7lken99ahluvuz67ugctleqmwv43a")
-
-	startServer(ctx)
+	startServer(ctx, rpc)
 }
