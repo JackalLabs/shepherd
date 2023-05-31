@@ -15,7 +15,7 @@ import (
 func initRouter(ctx client.Context) http.Handler {
 	router := httprouter.New()
 
-	router.GET("/:fid", func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	router.GET("/f/:fid", func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 
 		fid := ps.ByName("fid")
 
