@@ -21,7 +21,7 @@ func initRouter(ctx client.Context) http.Handler {
 
 		if len(fid) < 1 {
 			fmt.Println("needs to supply fid")
-			w.WriteHeader(500)
+			w.WriteHeader(400)
 			return
 		}
 
