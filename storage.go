@@ -13,7 +13,27 @@ import (
 
 func downloadFileFromURL(url string, fid string, writer io.Writer) error {
 	// Get the data
-	resp, err := http.Get(fmt.Sprintf("%s/download/%s", url, fid))
+
+	client := http.Client{}
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/download/%s", url, fid), nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header = http.Header{
+		"User-Agent":                {"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.62 Safari/537.36"},
+		"Upgrade-Insecure-Requests": {"1"},
+		"Accept":                    {"text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8"},
+		"Accept-Encoding":           {"gzip, deflate, br"},
+		"Accept-Language":           {"en-US,en;q=0.9"},
+		"Connection":                {"keep-alive"},
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+
 	if err != nil {
 		return err
 	}

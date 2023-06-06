@@ -16,7 +16,9 @@ import (
 
 func main() {
 	rpc := os.Getenv("RPC")
-
+	if rpc == "" {
+		rpc = "https://rpc.jackalprotocol.com:443"
+	}
 	encodingConfig := params.MakeTestEncodingConfig()
 	std.RegisterLegacyAminoCodec(encodingConfig.Amino)
 	std.RegisterInterfaces(encodingConfig.InterfaceRegistry)
