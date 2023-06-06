@@ -159,7 +159,6 @@ func initRouter(ctx client.Context) http.Handler {
 }
 
 func startServer(ctx client.Context, rpc string) {
-
 	handler := initRouter(ctx)
 
 	port := 5656
@@ -178,5 +177,4 @@ func startServer(ctx client.Context, rpc string) {
 		fmt.Printf("error starting server: %s\n", err)
 		os.Exit(1)
 	}
-
 }
