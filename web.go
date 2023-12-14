@@ -14,9 +14,9 @@ import (
 	"github.com/btcsuite/btcutil/bech32"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/gorilla/mux"
-	filetreeTypes "github.com/jackalLabs/canine-chain/x/filetree/types"
-	rnsTypes "github.com/jackalLabs/canine-chain/x/rns/types"
-	storageTypes "github.com/jackalLabs/canine-chain/x/storage/types"
+	filetreeTypes "github.com/jackalLabs/canine-chain/v3/x/filetree/types"
+	rnsTypes "github.com/jackalLabs/canine-chain/v3/x/rns/types"
+	storageTypes "github.com/jackalLabs/canine-chain/v3/x/storage/types"
 	"github.com/rs/cors"
 )
 
@@ -48,6 +48,7 @@ func merkleMeBro(rawpath string) string {
 
 func initRouter(ctx client.Context) http.Handler {
 	router := mux.NewRouter()
+	router.SkipClean(true)
 
 	router.HandleFunc("/f/{fid}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -61,7 +62,7 @@ func initRouter(ctx client.Context) http.Handler {
 
 		qc := storageTypes.NewQueryClient(ctx)
 
-		err := downloadFile(qc, fid, w)
+		err := downloadFile(qc, fid, w, false, "")
 		if err != nil {
 			fmt.Println(err)
 			w.WriteHeader(500)
@@ -69,88 +70,87 @@ func initRouter(ctx client.Context) http.Handler {
 		}
 	})
 
-	router.HandleFunc(`/p/{owner}/{path:[a-zA-Z0-9=\-\/\.]+}`, func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
+	downloadByPath := func(isMarkdown bool) func(http.ResponseWriter, *http.Request) {
+		return func(w http.ResponseWriter, r *http.Request) {
+			vars := mux.Vars(r)
+			owner := vars["owner"]
 
-		fmt.Println(r.URL.Path)
-		path := vars["path"]
-		if len(path) < 1 {
-			fmt.Println("needs to supply path")
-			w.WriteHeader(400)
-			return
-		}
+			path := vars["path"]
 
-		fmt.Println(path)
-
-		rqc := rnsTypes.NewQueryClient(ctx)
-		qc := filetreeTypes.NewQueryClient(ctx)
-		sqc := storageTypes.NewQueryClient(ctx)
-
-		splitPath := strings.Split(path, "&")
-
-		rawPath := "s"
-		for i := 0; i < len(splitPath); i++ {
-			rawPath = rawPath + "/" + splitPath[i]
-		}
-		fmt.Println(rawPath)
-		owner := vars["owner"]
-		fmt.Println(owner)
-
-		_, _, err := bech32.Decode(owner)
-		if err != nil {
-			rnsReq := rnsTypes.QueryNameRequest{
-				Index: fmt.Sprintf("%s.jkl", owner),
+			if len(path) < 1 {
+				fmt.Println("needs to supply path")
+				w.WriteHeader(400)
+				return
 			}
-			rnsRes, err := rqc.Names(context.Background(), &rnsReq)
+
+			rqc := rnsTypes.NewQueryClient(ctx)
+			qc := filetreeTypes.NewQueryClient(ctx)
+			sqc := storageTypes.NewQueryClient(ctx)
+
+			splitPath := strings.Split(path, "/")
+
+			rawPath := "s"
+			for i := 0; i < len(splitPath); i++ {
+				rawPath = rawPath + "/" + splitPath[i]
+			}
+			_, _, err := bech32.Decode(owner)
+			if err != nil {
+				rnsReq := rnsTypes.QueryNameRequest{
+					Index: fmt.Sprintf("%s.jkl", owner),
+				}
+				rnsRes, err := rqc.Names(context.Background(), &rnsReq)
+				if err != nil {
+					fmt.Println(err)
+					w.WriteHeader(500)
+					return
+				}
+
+				owner = rnsRes.Names.Value
+			}
+
+			hexAddress := merkleMeBro(rawPath)
+			hexedOwner := hashAndHex(fmt.Sprintf("o%s%s", hexAddress, hashAndHex(owner)))
+
+			req := filetreeTypes.QueryFileRequest{
+				Address:      hexAddress,
+				OwnerAddress: hexedOwner,
+			}
+
+			res, err := qc.Files(context.Background(), &req)
 			if err != nil {
 				fmt.Println(err)
 				w.WriteHeader(500)
 				return
 			}
 
-			owner = rnsRes.Names.Value
+			var contents ContentResponse
+
+			err = json.Unmarshal([]byte(res.Files.Contents), &contents)
+			if err != nil {
+				fmt.Println(err)
+				w.WriteHeader(500)
+				return
+			}
+
+			fids := contents.Fids
+			fid := fids[0]
+
+			err = downloadFile(sqc, fid, w, isMarkdown, splitPath[len(splitPath)-1])
+			if err != nil {
+				fmt.Println(err)
+				w.WriteHeader(500)
+				return
+			}
 		}
+	}
 
-		hexAddress := merkleMeBro(rawPath)
-		hexedOwner := hashAndHex(fmt.Sprintf("o%s%s", hexAddress, hashAndHex(owner)))
+	router.HandleFunc(`/p/{owner}/{path:.+}`, downloadByPath(false))
 
-		fmt.Println(hexAddress)
-		fmt.Println(hexedOwner)
+	router.HandleFunc(`/md/{owner}/{path:.+}`, downloadByPath(true))
 
-		req := filetreeTypes.QueryFileRequest{
-			Address:      hexAddress,
-			OwnerAddress: hexedOwner,
-		}
-
-		res, err := qc.Files(context.Background(), &req)
-		if err != nil {
-			fmt.Println(err)
-			w.WriteHeader(500)
-			return
-		}
-
-		var contents ContentResponse
-
-		err = json.Unmarshal([]byte(res.Files.Contents), &contents)
-		if err != nil {
-			fmt.Println(err)
-			w.WriteHeader(500)
-			return
-		}
-
-		fmt.Println(contents)
-
-		fids := contents.Fids
-		fid := fids[0]
-
-		fmt.Println(fid)
-
-		err = downloadFile(sqc, fid, w)
-		if err != nil {
-			fmt.Println(err)
-			w.WriteHeader(500)
-			return
-		}
+	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		s := "Shepherd Gateway"
+		w.Write([]byte(s))
 	})
 
 	handler := cors.Default().Handler(router)
@@ -158,10 +158,8 @@ func initRouter(ctx client.Context) http.Handler {
 	return handler
 }
 
-func startServer(ctx client.Context, rpc string) {
+func startServer(ctx client.Context, rpc string, port int64) {
 	handler := initRouter(ctx)
-
-	port := 5656
 
 	fmt.Printf("🌍 Started Shepherd: http://0.0.0.0:%d using %s\n", port, rpc)
 	err := http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d", port), handler)

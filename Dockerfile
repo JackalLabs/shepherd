@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.20
+FROM golang:1.21
 
 # Set destination for COPY
 WORKDIR /app
@@ -23,6 +23,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /shepherd
 EXPOSE 5656
 
 ENV RPC "https://rpc.jackalprotocol.com:443"
+ENV PORT "5656"
 
 # Run
 CMD [ "/shepherd" ]

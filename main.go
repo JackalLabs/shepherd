@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
@@ -19,6 +20,15 @@ func main() {
 	if rpc == "" {
 		rpc = "https://rpc.jackalprotocol.com:443"
 	}
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "5656"
+	}
+	portNum, err := strconv.ParseInt(port, 10, 64)
+	if err != nil {
+		panic(err)
+	}
+
 	encodingConfig := params.MakeTestEncodingConfig()
 	std.RegisterLegacyAminoCodec(encodingConfig.Amino)
 	std.RegisterInterfaces(encodingConfig.InterfaceRegistry)
@@ -47,5 +57,5 @@ func main() {
 		WithNodeURI(rpc).
 		WithClient(cl)
 
-	startServer(ctx, rpc)
+	startServer(ctx, rpc, portNum)
 }

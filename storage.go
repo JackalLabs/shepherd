@@ -8,10 +8,10 @@ import (
 	"math/rand"
 	"net/http"
 
-	storageTypes "github.com/jackalLabs/canine-chain/x/storage/types"
+	storageTypes "github.com/jackalLabs/canine-chain/v3/x/storage/types"
 )
 
-func downloadFileFromURL(url string, fid string, writer io.Writer) error {
+func downloadFileFromURL(url string, fid string, writer io.Writer, isMarkdown bool, title string) error {
 	// Get the data
 
 	client := http.Client{}
@@ -44,7 +44,15 @@ func downloadFileFromURL(url string, fid string, writer io.Writer) error {
 		return fmt.Errorf("bad status: %s", resp.Status)
 	}
 
-	fmt.Println("got file, forwarding file...")
+	if isMarkdown {
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		html := mdToHTML(bodyBytes, title)
+		writer.Write(html)
+		return nil
+	}
 
 	// Writer the body to writer
 	_, err = io.Copy(writer, resp.Body)
@@ -55,7 +63,7 @@ func downloadFileFromURL(url string, fid string, writer io.Writer) error {
 	return nil
 }
 
-func downloadFile(qc storageTypes.QueryClient, fid string, writer io.Writer) error {
+func downloadFile(qc storageTypes.QueryClient, fid string, writer io.Writer, isMarkdown bool, title string) error {
 	req := &storageTypes.QueryFindFileRequest{
 		Fid: fid,
 	}
@@ -65,8 +73,6 @@ func downloadFile(qc storageTypes.QueryClient, fid string, writer io.Writer) err
 		return err
 	}
 
-	fmt.Println("found file...")
-
 	ips := providers.ProviderIps
 	var arr []string
 	err = json.Unmarshal([]byte(ips), &arr)
@@ -74,26 +80,22 @@ func downloadFile(qc storageTypes.QueryClient, fid string, writer io.Writer) err
 		return err
 	}
 
-	fmt.Println("attempting to download file...")
-
 	rand.Shuffle(len(arr), func(i, j int) { // randomize provider order
 		arr[i], arr[j] = arr[j], arr[i]
 	})
 
 	failed := true
 	for _, s := range arr {
-		err := downloadFileFromURL(s, fid, writer)
+		err := downloadFileFromURL(s, fid, writer, isMarkdown, title)
 		if err == nil {
 			failed = false
 			break
 		}
-		fmt.Println("failed to download file, will try again...")
 	}
 
 	if failed {
 		return fmt.Errorf("failed to download any files")
 	}
 
-	fmt.Println("complete")
 	return nil
 }
