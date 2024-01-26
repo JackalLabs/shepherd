@@ -12,7 +12,7 @@ RUN go mod download
 # Copy the source code. Note the slash at the end, as explained in
 # https://docs.docker.com/engine/reference/builder/#copy
 COPY *.go ./
-
+COPY *.json ./
 # Build
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /shepherd
 

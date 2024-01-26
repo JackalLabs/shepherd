@@ -4,18 +4,31 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	storageTypes "github.com/jackalLabs/canine-chain/v3/x/storage/types"
+	"github.com/rs/zerolog/log"
 	"io"
 	"math/rand"
 	"net/http"
-
-	storageTypes "github.com/jackalLabs/canine-chain/v3/x/storage/types"
+	"path/filepath"
 )
+import _ "embed"
 
-func downloadFileFromURL(url string, fid string, writer io.Writer, isMarkdown bool, title string) error {
+//go:embed mime.json
+var mimes []byte
+
+var mimeTypes map[string]string
+
+func init() {
+	err := json.Unmarshal(mimes, &mimeTypes)
+	if err != nil {
+		log.Error().Err(err)
+	}
+}
+
+func downloadFileFromURL(url string, fileName string, fid string, writer http.ResponseWriter, isMarkdown bool, title string) error {
 	// Get the data
 
 	u := fmt.Sprintf("%s/download/%s", url, fid)
-	fmt.Println(u)
 
 	client := http.Client{}
 	req, err := http.NewRequest("GET", u, nil)
@@ -65,6 +78,14 @@ func downloadFileFromURL(url string, fid string, writer io.Writer, isMarkdown bo
 		return fmt.Errorf("file cannot be empty")
 	}
 
+	ext := filepath.Ext(fileName)
+	if len(ext) > 0 {
+		mime := mimeTypes[ext]
+		if len(mime) > 0 {
+			writer.Header().Set("Content-Type", mime)
+		}
+	}
+
 	_, err = writer.Write(bodyBytes)
 	if err != nil {
 		return err
@@ -73,7 +94,7 @@ func downloadFileFromURL(url string, fid string, writer io.Writer, isMarkdown bo
 	return nil
 }
 
-func downloadFile(qc storageTypes.QueryClient, fid string, writer io.Writer, isMarkdown bool, title string) error {
+func downloadFile(qc storageTypes.QueryClient, fileName string, fid string, writer http.ResponseWriter, isMarkdown bool, title string) error {
 	req := &storageTypes.QueryFindFileRequest{
 		Fid: fid,
 	}
@@ -96,7 +117,7 @@ func downloadFile(qc storageTypes.QueryClient, fid string, writer io.Writer, isM
 
 	failed := true
 	for _, s := range arr {
-		err := downloadFileFromURL(s, fid, writer, isMarkdown, title)
+		err := downloadFileFromURL(s, fileName, fid, writer, isMarkdown, title)
 		if err == nil {
 			failed = false
 			break

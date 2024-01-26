@@ -74,7 +74,7 @@ func initRouter(ctx client.Context) http.Handler {
 
 		qc := storageTypes.NewQueryClient(ctx)
 
-		err := downloadFile(qc, fid, w, false, "")
+		err := downloadFile(qc, fid, fid, w, false, "")
 		if err != nil {
 			fmt.Println(err)
 			w.WriteHeader(500)
@@ -88,8 +88,6 @@ func initRouter(ctx client.Context) http.Handler {
 			owner := vars["owner"]
 
 			path := vars["path"]
-
-			fmt.Println(path)
 
 			if len(path) < 1 {
 				fmt.Println("needs to supply path")
@@ -115,8 +113,6 @@ func initRouter(ctx client.Context) http.Handler {
 				}
 			}
 
-			fmt.Println(rawPath)
-
 			_, _, err := bech32.Decode(owner)
 			if err != nil {
 				rnsReq := rnsTypes.QueryNameRequest{
@@ -138,8 +134,6 @@ func initRouter(ctx client.Context) http.Handler {
 			hexAddress := addToMerkle(parentHex, myHex)
 
 			hexedOwner := hashAndHex(fmt.Sprintf("o%s%s", hexAddress, hashAndHex(owner)))
-
-			fmt.Println(hexAddress)
 
 			req := filetreeTypes.QueryFileRequest{
 				Address:      hexAddress,
@@ -165,7 +159,7 @@ func initRouter(ctx client.Context) http.Handler {
 			fids := contents.Fids
 			fid := fids[0]
 
-			err = downloadFile(sqc, fid, w, isMarkdown, splitPath[len(splitPath)-1])
+			err = downloadFile(sqc, filepath.Base(rawPath), fid, w, isMarkdown, splitPath[len(splitPath)-1])
 			if err != nil {
 				fmt.Println(fmt.Errorf("cannot download file %w", err).Error())
 				w.WriteHeader(500)
