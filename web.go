@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/btcsuite/btcutil/bech32"
@@ -22,6 +23,17 @@ import (
 
 type ContentResponse struct {
 	Fids []string `json:"fids"`
+}
+
+func addToMerkle(path string, append string) string {
+	total := path
+
+	k := fmt.Sprintf("%s%s", total, append)
+
+	h := sha256.New()
+	h.Write([]byte(k))
+	total = fmt.Sprintf("%x", h.Sum(nil))
+	return total
 }
 
 func hashAndHex(input string) string {
@@ -70,12 +82,14 @@ func initRouter(ctx client.Context) http.Handler {
 		}
 	})
 
-	downloadByPath := func(isMarkdown bool) func(http.ResponseWriter, *http.Request) {
+	downloadByPath := func(isMarkdown bool, web bool) func(http.ResponseWriter, *http.Request) {
 		return func(w http.ResponseWriter, r *http.Request) {
 			vars := mux.Vars(r)
 			owner := vars["owner"]
 
 			path := vars["path"]
+
+			fmt.Println(path)
 
 			if len(path) < 1 {
 				fmt.Println("needs to supply path")
@@ -93,6 +107,16 @@ func initRouter(ctx client.Context) http.Handler {
 			for i := 0; i < len(splitPath); i++ {
 				rawPath = rawPath + "/" + splitPath[i]
 			}
+
+			if web {
+				base := filepath.Base(rawPath)
+				if !strings.Contains(base, ".") {
+					rawPath = filepath.Join(rawPath, "index.html")
+				}
+			}
+
+			fmt.Println(rawPath)
+
 			_, _, err := bech32.Decode(owner)
 			if err != nil {
 				rnsReq := rnsTypes.QueryNameRequest{
@@ -108,8 +132,14 @@ func initRouter(ctx client.Context) http.Handler {
 				owner = rnsRes.Names.Value
 			}
 
-			hexAddress := merkleMeBro(rawPath)
+			parentHex := merkleMeBro(filepath.Dir(rawPath))
+			myHex := hashAndHex(filepath.Base(rawPath))
+
+			hexAddress := addToMerkle(parentHex, myHex)
+
 			hexedOwner := hashAndHex(fmt.Sprintf("o%s%s", hexAddress, hashAndHex(owner)))
+
+			fmt.Println(hexAddress)
 
 			req := filetreeTypes.QueryFileRequest{
 				Address:      hexAddress,
@@ -118,7 +148,7 @@ func initRouter(ctx client.Context) http.Handler {
 
 			res, err := qc.Files(context.Background(), &req)
 			if err != nil {
-				fmt.Println(err)
+				fmt.Println(fmt.Errorf("cannot find file on jackal %w", err).Error())
 				w.WriteHeader(500)
 				return
 			}
@@ -127,7 +157,7 @@ func initRouter(ctx client.Context) http.Handler {
 
 			err = json.Unmarshal([]byte(res.Files.Contents), &contents)
 			if err != nil {
-				fmt.Println(err)
+				fmt.Println(fmt.Errorf("cannot unmarshal file %w", err).Error())
 				w.WriteHeader(500)
 				return
 			}
@@ -137,20 +167,22 @@ func initRouter(ctx client.Context) http.Handler {
 
 			err = downloadFile(sqc, fid, w, isMarkdown, splitPath[len(splitPath)-1])
 			if err != nil {
-				fmt.Println(err)
+				fmt.Println(fmt.Errorf("cannot download file %w", err).Error())
 				w.WriteHeader(500)
 				return
 			}
 		}
 	}
 
-	router.HandleFunc(`/p/{owner}/{path:.+}`, downloadByPath(false))
+	router.HandleFunc(`/p/{owner}/{path:.+}`, downloadByPath(false, false))
 
-	router.HandleFunc(`/md/{owner}/{path:.+}`, downloadByPath(true))
+	router.HandleFunc(`/www/{owner}/{path:.+}`, downloadByPath(false, true))
+
+	router.HandleFunc(`/md/{owner}/{path:.+}`, downloadByPath(true, false))
 
 	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		s := "Shepherd Gateway"
-		w.Write([]byte(s))
+		_, _ = w.Write([]byte(s))
 	})
 
 	handler := cors.Default().Handler(router)

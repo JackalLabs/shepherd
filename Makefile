@@ -1,17 +1,10 @@
-install: check-go-version
+install:
 	go install -mod=readonly ../shepherd
 
-build: check-go-version
+build:
 	go build -mod=readonly -o build/shepherd ../shepherd
 
 PHONY: install build lint check-go-version
-
-# Add check to make sure we are using the proper Go version before proceeding with anything
-check-go-version:
-	@if ! go version | grep -q "go1.20"; then \
-		echo "\033[0;31mERROR:\033[0m Go version 1.20 is required for compiling shepherd. It looks like you are using" "$(shell go version). Please download Go version 1.20 and retry. Thank you!"; \
-		exit 1; \
-	fi
 
 
 ###############################################################################
@@ -19,7 +12,7 @@ check-go-version:
 ###############################################################################
 
 format-tools:
-	go install mvdan.cc/gofumpt@v0.3.1
+	go install mvdan.cc/gofumpt@v0.5.0
 	gofumpt -l -w .
 
 lint: format-tools

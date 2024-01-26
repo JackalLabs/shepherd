@@ -14,19 +14,22 @@ import (
 func downloadFileFromURL(url string, fid string, writer io.Writer, isMarkdown bool, title string) error {
 	// Get the data
 
+	u := fmt.Sprintf("%s/download/%s", url, fid)
+	fmt.Println(u)
+
 	client := http.Client{}
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/download/%s", url, fid), nil)
+	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
 		return err
 	}
 
 	req.Header = http.Header{
-		"User-Agent":                {"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.62 Safari/537.36"},
+		"User-Agent":                {"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"},
 		"Upgrade-Insecure-Requests": {"1"},
-		"Accept":                    {"text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8"},
-		"Accept-Encoding":           {"gzip, deflate, br"},
-		"Accept-Language":           {"en-US,en;q=0.9"},
-		"Connection":                {"keep-alive"},
+		"Accept":                    {"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"},
+		//"Accept-Encoding":           {"gzip, deflate, br"},
+		"Accept-Language": {"en-US,en;q=0.8"},
+		"Connection":      {"keep-alive"},
 	}
 
 	resp, err := client.Do(req)
@@ -37,25 +40,32 @@ func downloadFileFromURL(url string, fid string, writer io.Writer, isMarkdown bo
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
 
 	// Check server response
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("bad status: %s", resp.Status)
 	}
 
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	err = resp.Body.Close()
+	if err != nil {
+		return err
+	}
+
 	if isMarkdown {
-		bodyBytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return err
-		}
 		html := mdToHTML(bodyBytes, title)
-		writer.Write(html)
+		_, _ = writer.Write(html)
 		return nil
 	}
 
-	// Writer the body to writer
-	_, err = io.Copy(writer, resp.Body)
+	if len(bodyBytes) == 0 {
+		return fmt.Errorf("file cannot be empty")
+	}
+
+	_, err = writer.Write(bodyBytes)
 	if err != nil {
 		return err
 	}
