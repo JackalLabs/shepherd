@@ -1,9 +1,11 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"strconv"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
@@ -16,6 +18,10 @@ import (
 )
 
 func main() {
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+	log.Logger = log.With().Caller().Logger()
+	log.Logger = log.Level(zerolog.InfoLevel)
+
 	rpc := os.Getenv("RPC")
 	if rpc == "" {
 		rpc = "https://rpc.jackalprotocol.com:443"
@@ -40,7 +46,7 @@ func main() {
 
 	cl, err := client.NewClientFromNode(rpc)
 	if err != nil {
-		fmt.Println(err)
+		log.Error().Err(err)
 		return
 	}
 
