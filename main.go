@@ -1,8 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"strconv"
+
+	"github.com/dgraph-io/badger/v4"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -21,6 +24,31 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	log.Logger = log.With().Caller().Logger()
 	log.Logger = log.Level(zerolog.InfoLevel)
+
+	db, err := badger.Open(badger.DefaultOptions("data"))
+	if err != nil {
+		log.Error().Err(err)
+	}
+	defer db.Close()
+
+	_ = db.View(func(txn *badger.Txn) error {
+		it := txn.NewIterator(badger.IteratorOptions{})
+		defer it.Close()
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			k := item.Key()
+			err := item.Value(func(v []byte) error {
+				fmt.Printf("key=%s\n", k)
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 
 	rpc := os.Getenv("RPC")
 	if rpc == "" {
@@ -63,5 +91,5 @@ func main() {
 		WithNodeURI(rpc).
 		WithClient(cl)
 
-	startServer(ctx, rpc, portNum)
+	startServer(ctx, db, rpc, portNum)
 }

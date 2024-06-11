@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dgraph-io/badger/v4"
+
 	"github.com/btcsuite/btcutil/bech32"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/gorilla/mux"
@@ -59,7 +61,11 @@ func merkleMeBro(rawpath string) string {
 	return merkle
 }
 
-func downloadByPath(ctx client.Context, isMarkdown bool, web bool) func(http.ResponseWriter, *http.Request) {
+func makeDBAddress(owner, path string) []byte {
+	return []byte(fmt.Sprintf("%s_%s", owner, path))
+}
+
+func downloadByPath(ctx client.Context, db *badger.DB, isMarkdown bool, web bool) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		owner := vars["owner"]
@@ -68,6 +74,36 @@ func downloadByPath(ctx client.Context, isMarkdown bool, web bool) func(http.Res
 		if len(path) < 1 {
 			log.Warn().Msg("needs to supply path")
 			w.WriteHeader(400)
+			return
+		}
+
+		adr := makeDBAddress(owner, path)
+
+		var item []byte
+		err := db.View(func(txn *badger.Txn) error {
+			i, err := txn.Get(adr)
+			if err != nil {
+				return err
+			}
+			_ = i.Value(func(val []byte) error {
+				item = val
+				return nil
+			})
+			return nil
+		})
+		if err == nil {
+			log.Info().Msgf("Found %s in cache...", path)
+		}
+		if item != nil {
+			ext := filepath.Ext(path)
+			if len(ext) > 0 {
+				mime := mimeTypes[ext]
+				if len(mime) > 0 {
+					w.Header().Set("Content-Type", mime)
+				}
+			}
+			_, _ = w.Write(item)
+			log.Info().Msgf("Served %s from cache.", path)
 			return
 		}
 
@@ -89,7 +125,7 @@ func downloadByPath(ctx client.Context, isMarkdown bool, web bool) func(http.Res
 			}
 		}
 
-		_, _, err := bech32.Decode(owner)
+		_, _, err = bech32.Decode(owner)
 		if err != nil {
 			rnsReq := rnsTypes.QueryNameRequest{
 				Index: fmt.Sprintf("%s.jkl", owner),
@@ -118,7 +154,7 @@ func downloadByPath(ctx client.Context, isMarkdown bool, web bool) func(http.Res
 
 		res, err := qc.Files(context.Background(), &req)
 		if err != nil {
-			log.Warn().Msg(fmt.Errorf("cannot find file on jackal %w", err).Error())
+			log.Warn().Msg(fmt.Errorf("cannot find file on jackal %w | %s", err, path).Error())
 			w.WriteHeader(500)
 			return
 		}
@@ -135,7 +171,7 @@ func downloadByPath(ctx client.Context, isMarkdown bool, web bool) func(http.Res
 		fids := contents.Fids
 		fid := fids[0]
 
-		err = downloadFile(sqc, filepath.Base(rawPath), fid, w, isMarkdown, splitPath[len(splitPath)-1])
+		err = downloadFile(sqc, db, adr, filepath.Base(rawPath), fid, w, isMarkdown, splitPath[len(splitPath)-1])
 		if err != nil {
 			log.Warn().Msg(fmt.Errorf("cannot download file %w", err).Error())
 			w.WriteHeader(500)
@@ -211,7 +247,7 @@ func rnsSite(ctx client.Context) func(http.ResponseWriter, *http.Request) {
 		fids := contents.Fids
 		fid := fids[0]
 
-		err = downloadFile(sqc, filepath.Base(path), fid, w, false, filepath.Base(path))
+		err = downloadFile(sqc, nil, nil, filepath.Base(path), fid, w, false, filepath.Base(path))
 		if err != nil {
 			log.Warn().Msg(fmt.Errorf("cannot download file %w", err).Error())
 			w.WriteHeader(500)
@@ -233,7 +269,7 @@ func fidFile(ctx client.Context) func(w http.ResponseWriter, r *http.Request) {
 
 		qc := storageTypes.NewQueryClient(ctx)
 
-		err := downloadFile(qc, fid, fid, w, false, "")
+		err := downloadFile(qc, nil, nil, fid, fid, w, false, "")
 		if err != nil {
 			log.Warn().Err(err)
 			w.WriteHeader(500)
@@ -242,15 +278,15 @@ func fidFile(ctx client.Context) func(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func initRouter(ctx client.Context) http.Handler {
+func initRouter(ctx client.Context, db *badger.DB) http.Handler {
 	router := mux.NewRouter()
 	router.SkipClean(true)
 
 	router.HandleFunc("/f/{fid}", fidFile(ctx))
 
-	router.HandleFunc(`/p/{owner}/{path:.+}`, downloadByPath(ctx, false, false))
-	router.HandleFunc(`/www/{owner}/{path:.+}`, downloadByPath(ctx, false, true))
-	router.HandleFunc(`/md/{owner}/{path:.+}`, downloadByPath(ctx, true, false))
+	router.HandleFunc(`/p/{owner}/{path:.+}`, downloadByPath(ctx, db, false, false))
+	router.HandleFunc(`/www/{owner}/{path:.+}`, downloadByPath(ctx, db, false, true))
+	router.HandleFunc(`/md/{owner}/{path:.+}`, downloadByPath(ctx, db, true, false))
 
 	router.HandleFunc(`/{rns}/{path:.+}`, rnsSite(ctx))
 	router.HandleFunc(`/{rns}`, rnsSite(ctx))
@@ -265,8 +301,8 @@ func initRouter(ctx client.Context) http.Handler {
 	return handler
 }
 
-func startServer(ctx client.Context, rpc string, port int64) {
-	handler := initRouter(ctx)
+func startServer(ctx client.Context, db *badger.DB, rpc string, port int64) {
+	handler := initRouter(ctx, db)
 
 	log.Info().Msgf("🌍 Started Shepherd: http://0.0.0.0:%d using %s", port, rpc)
 	err := http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d", port), handler)

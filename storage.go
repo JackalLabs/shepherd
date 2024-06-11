@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"path/filepath"
 
+	"github.com/dgraph-io/badger/v4"
+
 	storageTypes "github.com/jackalLabs/canine-chain/v3/x/storage/types"
 	"github.com/rs/zerolog/log"
 )
@@ -26,7 +28,7 @@ func init() {
 	}
 }
 
-func downloadFileFromURL(url string, fileName string, fid string, writer http.ResponseWriter, isMarkdown bool, title string) error {
+func downloadFileFromURL(url string, fileName string, fid string, writer http.ResponseWriter, isMarkdown bool, title string) ([]byte, error) {
 	// Get the data
 
 	u := fmt.Sprintf("%s/download/%s", url, fid)
@@ -34,7 +36,7 @@ func downloadFileFromURL(url string, fileName string, fid string, writer http.Re
 	client := http.Client{}
 	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	req.Header = http.Header{
@@ -48,35 +50,37 @@ func downloadFileFromURL(url string, fileName string, fid string, writer http.Re
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Check server response
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("bad status: %s", resp.Status)
+		return nil, fmt.Errorf("bad status: %s", resp.Status)
 	}
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = resp.Body.Close()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if isMarkdown {
 		html := mdToHTML(bodyBytes, title)
+		tmp := make([]byte, len(html))
+		copy(tmp, html)
 		_, _ = writer.Write(html)
-		return nil
+		return tmp, nil
 	}
 
 	if len(bodyBytes) == 0 {
-		return fmt.Errorf("file cannot be empty")
+		return nil, fmt.Errorf("file cannot be empty")
 	}
 
 	ext := filepath.Ext(fileName)
@@ -87,15 +91,22 @@ func downloadFileFromURL(url string, fileName string, fid string, writer http.Re
 		}
 	}
 
+	tmp := make([]byte, len(bodyBytes))
+	copy(tmp, bodyBytes)
+
+	fmt.Printf("%s real %d\n", fileName, len(bodyBytes))
+
 	_, err = writer.Write(bodyBytes)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	fmt.Printf("%s temp %d\n", fileName, len(tmp))
+
+	return tmp, nil
 }
 
-func downloadFile(qc storageTypes.QueryClient, fileName string, fid string, writer http.ResponseWriter, isMarkdown bool, title string) error {
+func downloadFile(qc storageTypes.QueryClient, db *badger.DB, key []byte, fileName string, fid string, writer http.ResponseWriter, isMarkdown bool, title string) error {
 	req := &storageTypes.QueryFindFileRequest{
 		Fid: fid,
 	}
@@ -117,16 +128,29 @@ func downloadFile(qc storageTypes.QueryClient, fileName string, fid string, writ
 	})
 
 	failed := true
+	var fd []byte
 	for _, s := range arr {
-		err := downloadFileFromURL(s, fileName, fid, writer, isMarkdown, title)
+		fileData, err := downloadFileFromURL(s, fileName, fid, writer, isMarkdown, title)
+		fmt.Printf("%s returned %d\n", fileName, len(fileData))
 		if err == nil {
+			fd = make([]byte, len(fileData))
+			copy(fd, fileData)
 			failed = false
 			break
 		}
+
 	}
 
 	if failed {
 		return fmt.Errorf("failed to download any files")
+	}
+
+	fmt.Printf("%s inserted %d\n", fileName, len(fd))
+
+	if db != nil {
+		_ = db.Update(func(txn *badger.Txn) error {
+			return txn.Set(key, fd)
+		})
 	}
 
 	return nil
